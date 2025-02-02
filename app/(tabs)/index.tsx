@@ -203,38 +203,45 @@ export default function HomeScreen() {
             className="w-40 h-40"
           />
         </View>
-        <View className="flex-row flex-wrap justify-center gap-3 mt-6">
-          <View className="bg-white w-44 h-44 flex items-center justify-center rounded-2xl shadow-xl shadow-black android:elevation-10">
-            <TouchableOpacity className="w-32 h-32 bg-black border-4 border-white rounded-full flex items-center justify-center shadow-xl shadow-black android:elevation-20">
-              <PhotoIcon size={40} color="white" />
-            </TouchableOpacity>
+        <View className="flex flex-wrap justify-center gap-3 mt-6">
+          <View className="flex-row justify-center gap-3">
+            <View className="bg-white w-44 h-44 flex items-center justify-center rounded-2xl shadow-xl shadow-black android:elevation-10">
+              <TouchableOpacity className="w-32 h-32 bg-black border-4 border-white rounded-full flex items-center justify-center shadow-xl shadow-black android:elevation-20">
+                <PhotoIcon size={40} color="white" />
+              </TouchableOpacity>
+            </View>
+
+            <View className="bg-white w-44 h-44 flex items-center justify-center rounded-2xl shadow-xl shadow-black android:elevation-10">
+              <TouchableOpacity
+                onPress={() => {
+                  setUploadAudio(false);
+                  setAudioInput(!audioInput);
+                }}
+                className="w-32 h-32 bg-black border-4 border-white rounded-full flex items-center justify-center shadow-xl shadow-black android:elevation-20"
+              >
+                <MicrophoneIcon size={40} color="white" />
+              </TouchableOpacity>
+            </View>
           </View>
 
-          <View className="bg-white w-44 h-44 flex items-center justify-center rounded-2xl shadow-xl shadow-black android:elevation-10">
-            <TouchableOpacity
-              onPress={() => {
-                setUploadAudio(false);
-                setAudioInput(!audioInput);
-              }}
-              className="w-32 h-32 bg-black border-4 border-white rounded-full flex items-center justify-center shadow-xl shadow-black android:elevation-20"
-            >
-              <MicrophoneIcon size={40} color="white" />
-            </TouchableOpacity>
-          </View>
-          <View className="bg-white w-44 h-44 flex items-center justify-center rounded-2xl shadow-xl shadow-black android:elevation-10">
-            <TouchableOpacity className="w-32 h-32 bg-black border-4 border-white rounded-full flex items-center justify-center shadow-xl shadow-black android:elevation-20">
-              <Squares2X2Icon size={40} color="white" />
-            </TouchableOpacity>
-          </View>
-          <View className="bg-white w-44 h-44 flex items-center justify-center rounded-2xl shadow-xl shadow-black android:elevation-10">
-            <TouchableOpacity
-              onPress={() => setTextInput(!textInput)}
-              className="w-32 h-32 bg-black border-4 border-white rounded-full flex items-center justify-center shadow-xl shadow-black android:elevation-20"
-            >
-              <PencilSquareIcon size={40} color="white" />
-            </TouchableOpacity>
+          <View className="flex-row justify-center gap-3">
+            <View className="bg-white w-44 h-44 flex items-center justify-center rounded-2xl shadow-xl shadow-black android:elevation-10">
+              <TouchableOpacity className="w-32 h-32 bg-black border-4 border-white rounded-full flex items-center justify-center shadow-xl shadow-black android:elevation-20">
+                <Squares2X2Icon size={40} color="white" />
+              </TouchableOpacity>
+            </View>
+
+            <View className="bg-white w-44 h-44 flex items-center justify-center rounded-2xl shadow-xl shadow-black android:elevation-10">
+              <TouchableOpacity
+                onPress={() => setTextInput(!textInput)}
+                className="w-32 h-32 bg-black border-4 border-white rounded-full flex items-center justify-center shadow-xl shadow-black android:elevation-20"
+              >
+                <PencilSquareIcon size={40} color="white" />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
+
         <View className="flex justify-center mt-16">
           {textInput && (
             <View className="flex items-center">
