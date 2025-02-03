@@ -124,14 +124,35 @@ export default function HomeScreen() {
         await sound.sound.pauseAsync();
         setPlayingSoundIndex(null);
       } else {
-        if (playingSoundIndex !== null && playingSoundIndex !== soundIndex) {
-          await loadedSounds[playingSoundIndex].sound.stopAsync();
-        }
+        // if (playingSoundIndex !== null && playingSoundIndex !== soundIndex) {
+        //   await loadedSounds[playingSoundIndex].sound.stopAsync();
+        // }
         await sound.sound.playAsync();
         setPlayingSoundIndex(soundIndex);
       }
     } catch (error) {
       console.log("Error toggling playback:", error);
+    }
+  }
+  async function deletePlayback(soundIndex: number) {
+    const sound = loadedSounds[soundIndex];
+    if (!sound || !sound.sound) return;
+
+    try {
+      const status = await sound.sound.getStatusAsync();
+
+      if (status.isPlaying) {
+        await sound.sound.stopAsync();
+        setPlayingSoundIndex(null);
+      } else {
+        if (playingSoundIndex !== null && playingSoundIndex !== soundIndex) {
+          await loadedSounds[playingSoundIndex].sound.stopAsync();
+        }
+        await sound.sound.stopAsync();
+        setPlayingSoundIndex(soundIndex);
+      }
+    } catch (error) {
+      console.log("Error deleting playback:", error);
     }
   }
 
@@ -214,6 +235,7 @@ export default function HomeScreen() {
             <View className="bg-white w-44 h-44 flex items-center justify-center rounded-2xl shadow-xl shadow-black android:elevation-10">
               <TouchableOpacity
                 onPress={() => {
+                  setTextInput(false);
                   setUploadAudio(false);
                   setAudioInput(!audioInput);
                 }}
@@ -385,7 +407,9 @@ export default function HomeScreen() {
                             <View className="flex-col items-center gap-4 mt-6">
                               <TouchableOpacity
                                 className="w-24 bg-black flex-row items-center gap-1 p-2 rounded-lg"
-                                onPress={() => setUploadAudio(false)}
+                                onPress={() => {
+                                  deletePlayback(index);
+                                  setUploadAudio(false)}}
                               >
                                 <TrashIcon size={20} color="white" />
                                 <Text className="text-white text-base font-bold">
