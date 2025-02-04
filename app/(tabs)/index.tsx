@@ -1,4 +1,5 @@
 import {
+  ActivityIndicator,
   Modal,
   ScrollView,
   Text,
@@ -21,12 +22,13 @@ import {
   ArrowUpIcon,
   TrashIcon,
 } from "react-native-heroicons/outline";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Image } from "react-native";
 import { Audio } from "expo-av";
 import * as DocumentPicker from "expo-document-picker";
 
 export default function HomeScreen() {
+  const [text, setText] = useState<string>("");
   const [textInput, setTextInput] = useState<boolean>(false);
   const [audioInput, setAudioInput] = useState<boolean>(false);
   const [recordAudio, setRecordAudio] = useState<boolean>(false);
@@ -41,6 +43,12 @@ export default function HomeScreen() {
   const [playingRecordingIndex, setPlayingRecordingIndex] = useState<
     number | null
   >(null);
+  const [showOutput, setShowOutput] = useState<boolean>(false);
+  const [inputType, setInputType] = useState<string>("");
+  const [outputType, setOutputType] = useState<string>("Text");
+  const [textOutput, setTextOutput] = useState<string>("");
+  const [brailleOutput, setBrailleOutput] = useState<string>("");
+  const [signGif, setSignGif] = useState<string | null>(null);
 
   async function loadAudioFile(uri: string) {
     const { sound } = await Audio.Sound.createAsync(
@@ -75,7 +83,6 @@ export default function HomeScreen() {
       duration: getDuration(status.durationMillis),
       file: recording.getURI(),
     });
-    console.log(allRecordings);
     setRecordings(allRecordings);
     setRecording(undefined);
   }
@@ -215,9 +222,89 @@ export default function HomeScreen() {
       console.log("Error picking audio:", err);
     }
   }
+
+  const convertAudio = async (uri: string) => {
+    try {
+      const fileName = "audio.m4a";
+      const fileType = "audio/m4a";
+
+      const formData = new FormData();
+      formData.append("file", {
+        uri: uri,
+        name: fileName,
+        type: fileType,
+      } as any);
+
+      console.log("FormData prepared:", formData);
+      const response = await fetch(
+        "https://adapt-sense-backend.onrender.com/speech_to_text/",
+        {
+          method: "POST",
+          body: formData,
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setTextOutput(data.transcribed_text);
+    } catch (err) {
+      console.error("Error preparing audio file:", err);
+    }
+  };
+
+  const textToBraille = async (text: string) => {
+    try {
+      const response = await fetch(
+        "https://adapt-sense-backend.onrender.com/to_braille",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text: text,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setBrailleOutput(data.braille);
+    } catch (err) {
+      console.error("Error preparing text for Braille:", err);
+    }
+  };
+
+  const textToSign = async (text: string) => {
+    try {
+      const encodedText = encodeURIComponent(text);
+      const url = `https://adapt-sense-backend.onrender.com/stream_sign_images?text=${encodedText}`;
+      setSignGif(url);
+    } catch (err) {
+      console.error("Error converting text to sign:", err);
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    if (textOutput.length > 0) {
+      textToBraille(textOutput);
+      textToSign(textOutput);
+    }
+  }, [textOutput]);
+
   return (
     <SafeAreaView className="flex-1">
-      <ScrollView className="flex-1 bg-[#FFF]">
+      <View className="flex-1 bg-[#FFF]">
         <View className="flex flex-col items-center">
           <Image
             source={require("../../assets/images/logo.png")}
@@ -237,7 +324,7 @@ export default function HomeScreen() {
                 onPress={() => {
                   setTextInput(false);
                   setUploadAudio(false);
-                  setAudioInput(!audioInput);
+                  setAudioInput(true);
                 }}
                 className="w-32 h-32 bg-black border-4 border-white rounded-full flex items-center justify-center shadow-xl shadow-black android:elevation-20"
               >
@@ -264,176 +351,335 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <View className="flex justify-center mt-16">
-          {textInput && (
-            <View className="flex items-center">
-              <Text className="text-black text-xl font-bold">
-                Enter your text
-              </Text>
-              <TextInput
-                className="w-[80%] h-auto bg-gray-500 text-white text-lg border-2 border-black rounded-xl mt-4"
-                placeholder="Type your text here"
-                placeholderTextColor="lightgray"
-                multiline={true}
-              />
-              <TouchableOpacity className="w-auto h-10 bg-black border rounded-lg flex items-center justify-center mt-6 mb-4 p-2">
-                <Text className="text-white font-bold">Submit</Text>
-              </TouchableOpacity>
+        {textInput && (
+          <Modal
+            transparent={true}
+            onRequestClose={() => setTextInput(false)}
+            animationType="fade"
+          >
+            <View className="flex-1 bg-black/50 items-center justify-center">
+              <View className="w-4/5 h-96 bg-white p-10 rounded-2xl flex-col items-center shadow-xl shadow-black android:elevation-20 border-2 border-dotted">
+                <TouchableOpacity
+                  onPress={() => setTextInput(false)}
+                  className="absolute top-3 right-3"
+                >
+                  <XMarkIcon size={30} color="black" />
+                </TouchableOpacity>
+                <Text className="text-black text-xl font-bold">
+                  Enter your text
+                </Text>
+                <TextInput
+                  className="w-full h-48 bg-gray-500 text-white text-lg border-2 border-black rounded-xl mt-4 p-2"
+                  placeholder="Type your text here"
+                  placeholderTextColor="lightgray"
+                  multiline
+                  value={text}
+                  onChangeText={(text) => setText(text)}
+                  style={{ textAlignVertical: "top" }}
+                />
+                <TouchableOpacity
+                  disabled={text === ""}
+                  onPress={() => {
+                    setInputType("Text");
+                    setTextInput(false);
+                    setShowOutput(true);
+                  }}
+                  className={`w-24 h-10 border rounded-lg flex items-center justify-center mt-4 mb-4 p-2 ${
+                    text === "" ? "bg-gray-400" : "bg-black"
+                  }`}
+                >
+                  <View className="flex-row items-center gap-1 p-2">
+                    <ArrowUpIcon size={20} color="white" />
+                    <Text className="text-white font-bold">Submit</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
             </View>
-          )}
-          {audioInput && (
-            <Modal
-              transparent={true}
-              onRequestClose={() => setAudioInput(false)}
-              animationType="fade"
-            >
-              <View className="flex-1 bg-black/50 items-center justify-center">
-                <View className="w-4/5 h-2/5 bg-white p-10 rounded-2xl flex-col items-center justify-center shadow-xl shadow-black android:elevation-20 border-2 border-dotted">
+          </Modal>
+        )}
+
+        {audioInput && (
+          <Modal
+            transparent={true}
+            onRequestClose={() => setAudioInput(false)}
+            animationType="fade"
+          >
+            <View className="flex-1 bg-black/50 items-center justify-center">
+              <View className="w-4/5 h-2/5 bg-white p-10 rounded-2xl flex-col items-center justify-center shadow-xl shadow-black android:elevation-20 border-2 border-dotted">
+                <TouchableOpacity
+                  onPress={() => {
+                    setLoadedSounds([]);
+                    setAudioInput(false);
+                  }}
+                  className="absolute top-3 right-3"
+                >
+                  <XMarkIcon size={30} color="black" />
+                </TouchableOpacity>
+                {recordAudio || uploadAudio ? (
                   <TouchableOpacity
-                    onPress={() => setAudioInput(false)}
-                    className="absolute top-3 right-3"
+                    onPress={() => {
+                      clearRecording();
+                      setRecordAudio(false);
+                      setUploadAudio(false);
+                    }}
+                    className="absolute top-4 left-4"
                   >
-                    <XMarkIcon size={30} color="black" />
+                    <ArrowLeftIcon size={20} color="black" />
                   </TouchableOpacity>
-                  {recordAudio || uploadAudio ? (
+                ) : null}
+                {getRecordingLines()}
+                {!recordAudio && !uploadAudio ? (
+                  <View className="items-center">
                     <TouchableOpacity
-                      onPress={() => {
-                        clearRecording();
-                        setRecordAudio(false);
-                        setUploadAudio(false);
-                      }}
-                      className="absolute top-4 left-4"
+                      className="w-40 h-16 bg-black border rounded-lg flex-row items-center justify-center mt-6 mb-4 p-2"
+                      onPress={() => setRecordAudio(true)}
                     >
-                      <ArrowLeftIcon size={20} color="black" />
+                      <MicrophoneIcon size={20} color="white" />
+                      <Text className="text-white font-bold ml-2">
+                        Record Audio
+                      </Text>
                     </TouchableOpacity>
-                  ) : null}
-                  {getRecordingLines()}
-                  {!recordAudio && !uploadAudio ? (
-                    <View className="items-center">
-                      <TouchableOpacity
-                        className="w-40 h-16 bg-black border rounded-lg flex-row items-center justify-center mt-6 mb-4 p-2"
-                        onPress={() => setRecordAudio(true)}
-                      >
-                        <MicrophoneIcon size={20} color="white" />
-                        <Text className="text-white font-bold ml-2">
-                          Record Audio
-                        </Text>
+                    <Text className="text-black text-xl font-bold">or</Text>
+                    <TouchableOpacity
+                      className="w-40 h-16 bg-black border rounded-lg flex-row items-center justify-center mt-6 mb-4 p-2"
+                      onPress={() => {
+                        pickAudio();
+                        setUploadAudio(true);
+                      }}
+                    >
+                      <ArrowUpTrayIcon size={20} color="white" />
+                      <Text className="text-white font-bold ml-2">
+                        Upload Audio
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : recordAudio && !uploadAudio ? (
+                  <View>
+                    <TouchableOpacity
+                      onPress={recording ? stopRecording : startRecording}
+                      className={recordings.length > 0 ? "hidden" : ""}
+                    >
+                      {recording ? (
+                        <View className="flex-col items-center gap-2">
+                          <StopCircleIcon size={40} color="red" />
+                          <Text className="text-lg text-red-500 font-bold">
+                            Stop
+                          </Text>
+                        </View>
+                      ) : (
+                        <View className="flex-col items-center gap-2">
+                          <MicrophoneIcon size={40} color="red" />
+                          <Text className="text-lg text-red-500 font-bold">
+                            Start
+                          </Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                    <View className="flex-col items-center gap-4">
+                      <TouchableOpacity onPress={clearRecording}>
+                        {recordings.length > 0 ? (
+                          <View className="w-24 bg-black text-white flex-row items-center gap-1 p-2 rounded-lg">
+                            <TrashIcon size={20} color="white" />
+                            <Text className="text-white text-base font-bold">
+                              Delete
+                            </Text>
+                          </View>
+                        ) : null}
                       </TouchableOpacity>
-                      <Text className="text-black text-xl font-bold">or</Text>
                       <TouchableOpacity
-                        className="w-40 h-16 bg-black border rounded-lg flex-row items-center justify-center mt-6 mb-4 p-2"
                         onPress={() => {
-                          pickAudio();
-                          setUploadAudio(true);
+                          setInputType("Audio");
+                          setAudioInput(false);
+                          setShowOutput(true);
+                          convertAudio(recordings[0].file);
                         }}
                       >
-                        <ArrowUpTrayIcon size={20} color="white" />
-                        <Text className="text-white font-bold ml-2">
-                          Upload Audio
-                        </Text>
+                        {recordings.length > 0 ? (
+                          <View className="w-24 bg-black text-white flex-row items-center gap-1 p-2 rounded-lg">
+                            <ArrowUpIcon size={20} color="white" />
+                            <Text className="text-white text-base font-bold">
+                              Submit
+                            </Text>
+                          </View>
+                        ) : null}
                       </TouchableOpacity>
                     </View>
-                  ) : recordAudio && !uploadAudio ? (
+                  </View>
+                ) : (
+                  uploadAudio &&
+                  !recordAudio && (
                     <View>
-                      <TouchableOpacity
-                        onPress={recording ? stopRecording : startRecording}
-                        className={recordings.length > 0 ? "hidden" : ""}
-                      >
-                        {recording ? (
-                          <View className="flex-col items-center gap-2">
-                            <StopCircleIcon size={40} color="red" />
-                            <Text className="text-lg text-red-500 font-bold">
-                              Stop
-                            </Text>
+                      {loadedSounds.map((sound: any, index: number) => (
+                        <View>
+                          <View
+                            key={index}
+                            className=" flex-row h-28 items-center justify-between border border-black p-2 rounded-xl mt-4"
+                          >
+                            <ScrollView>
+                              <Text className="w-2/3 text-red-500 text-lg font-bold">
+                                {audioName}
+                              </Text>
+                            </ScrollView>
+
+                            <TouchableOpacity
+                              onPress={() => togglePlayback(index)}
+                            >
+                              {playingSoundIndex === index ? (
+                                <PauseCircleIcon size={40} color="red" />
+                              ) : (
+                                <PlayCircleIcon size={40} color="red" />
+                              )}
+                            </TouchableOpacity>
                           </View>
-                        ) : (
-                          <View className="flex-col items-center gap-2">
-                            <MicrophoneIcon size={40} color="red" />
-                            <Text className="text-lg text-red-500 font-bold">
-                              Start
-                            </Text>
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                      <View className="flex-col items-center gap-4">
-                        <TouchableOpacity onPress={clearRecording}>
-                          {recordings.length > 0 ? (
-                            <View className="w-24 bg-black text-white flex-row items-center gap-1 p-2 rounded-lg">
+                          <View className="flex-col items-center gap-4 mt-6">
+                            <TouchableOpacity
+                              className="w-24 bg-black flex-row items-center gap-1 p-2 rounded-lg"
+                              onPress={() => {
+                                deletePlayback(index);
+                                setUploadAudio(false);
+                              }}
+                            >
                               <TrashIcon size={20} color="white" />
                               <Text className="text-white text-base font-bold">
                                 Delete
                               </Text>
-                            </View>
-                          ) : null}
-                        </TouchableOpacity>
-                        <TouchableOpacity>
-                          {recordings.length > 0 ? (
-                            <View className="w-24 bg-black text-white flex-row items-center gap-1 p-2 rounded-lg">
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => {
+                                setInputType("Audio");
+                                setAudioInput(false);
+                                setShowOutput(true);
+                                convertAudio(loadedSounds[index].uri);
+                              }}
+                              className="w-24 bg-black flex-row items-center gap-1 p-2 rounded-lg"
+                            >
                               <ArrowUpIcon size={20} color="white" />
                               <Text className="text-white text-base font-bold">
                                 Submit
                               </Text>
-                            </View>
-                          ) : null}
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ) : (
-                    uploadAudio &&
-                    !recordAudio && (
-                      <View>
-                        {loadedSounds.map((sound: any, index: number) => (
-                          <View>
-                            <View
-                              key={index}
-                              className=" flex-row h-28 items-center justify-between border border-black p-2 rounded-xl mt-4"
-                            >
-                              <ScrollView>
-                                <Text className="w-2/3 text-red-500 text-lg font-bold">
-                                  {audioName}
-                                </Text>
-                              </ScrollView>
-
-                              <TouchableOpacity
-                                onPress={() => togglePlayback(index)}
-                              >
-                                {playingSoundIndex === index ? (
-                                  <PauseCircleIcon size={40} color="red" />
-                                ) : (
-                                  <PlayCircleIcon size={40} color="red" />
-                                )}
-                              </TouchableOpacity>
-                            </View>
-                            <View className="flex-col items-center gap-4 mt-6">
-                              <TouchableOpacity
-                                className="w-24 bg-black flex-row items-center gap-1 p-2 rounded-lg"
-                                onPress={() => {
-                                  deletePlayback(index);
-                                  setUploadAudio(false)}}
-                              >
-                                <TrashIcon size={20} color="white" />
-                                <Text className="text-white text-base font-bold">
-                                  Delete
-                                </Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity className="w-24 bg-black flex-row items-center gap-1 p-2 rounded-lg">
-                                <ArrowUpIcon size={20} color="white" />
-                                <Text className="text-white text-base font-bold">
-                                  Submit
-                                </Text>
-                              </TouchableOpacity>
-                            </View>
+                            </TouchableOpacity>
                           </View>
-                        ))}
-                      </View>
-                    )
-                  )}
-                </View>
+                        </View>
+                      ))}
+                    </View>
+                  )
+                )}
               </View>
-            </Modal>
-          )}
-        </View>
-      </ScrollView>
+            </View>
+          </Modal>
+        )}
+        {showOutput && (
+          <Modal transparent={true} animationType="fade">
+            <View className="flex-1 bg-black/50 items-center justify-center">
+              <View className="w-10/12 h-3/5 bg-white p-10 rounded-2xl flex-col items-center shadow-xl shadow-black android:elevation-20 border-2 border-dotted">
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowOutput(false);
+                    setInputType("");
+                    setText("");
+                    setTextOutput("");
+                    setBrailleOutput("");
+                  }}
+                  className="absolute top-3 right-3"
+                >
+                  <XMarkIcon size={30} color="black" />
+                </TouchableOpacity>
+                <Text className="text-black text-2xl font-bold">
+                  Select the output type
+                </Text>
+                <View className="flex-row items-center justify-center mt-3">
+                  <TouchableOpacity
+                    onPress={() => setOutputType("Text")}
+                    className={`${
+                      inputType === "Text"
+                        ? "hidden"
+                        : "mr-2 border border-black p-1 rounded-lg"
+                    }`}
+                  >
+                    <Text className="text-black text-lg font-bold">Text</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setOutputType("Audio")}
+                    className={`${
+                      inputType === "Audio"
+                        ? "hidden"
+                        : "mr-2 border border-black p-1 rounded-lg"
+                    }`}
+                  >
+                    <Text className="text-black text-lg font-bold">Audio</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setOutputType("Sign")}
+                    className={`${
+                      inputType === "Sign"
+                        ? "hidden"
+                        : "mr-2 border border-black p-1 rounded-lg"
+                    }`}
+                  >
+                    <Text className="text-black text-lg font-bold">Sign</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setOutputType("Braille")}
+                    className={`${
+                      inputType === "Braille"
+                        ? "hidden"
+                        : "mr-2 border border-black p-1 rounded-lg"
+                    }`}
+                  >
+                    <Text className="text-black text-lg font-bold">
+                      Braille
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <Text className="text-black text-xl font-bold mt-10">
+                  {outputType} Output
+                </Text>
+                {outputType === "Text" && (
+                  <ScrollView className="border-2 rounded-xl w-full p-4 mt-2">
+                    {textOutput.length > 0 ? (
+                      <Text className="text-black text-lg text-center">
+                        {textOutput}
+                      </Text>
+                    ) : (
+                      <View className="flex justify-center items-center space-x-2">
+                        <ActivityIndicator size="large" color="black" />
+                      </View>
+                    )}
+                  </ScrollView>
+                )}
+                {outputType === "Sign" && (
+                  <View className="border-2 rounded-xl w-full h-3/5 p-4 mt-2">
+                    {signGif ? (
+                      <Image
+                        source={{ uri: signGif }}
+                        className="w-full h-60 mt-4"
+                        resizeMode="contain"
+                      />
+                    ) : (
+                      <View className="flex justify-center items-center space-x-2">
+                        <ActivityIndicator size="large" color="black" />
+                      </View>
+                    )}
+                  </View>
+                )}
+                {outputType === "Braille" && (
+                  <ScrollView className="border-2 rounded-xl w-full p-4 mt-2">
+                    {brailleOutput.length > 0 ? (
+                      <Text className="text-black text-lg text-center">
+                        {brailleOutput}
+                      </Text>
+                    ) : (
+                      <View className="flex justify-center items-center space-x-2">
+                        <ActivityIndicator size="large" color="black" />
+                      </View>
+                    )}
+                  </ScrollView>
+                )}
+              </View>
+            </View>
+          </Modal>
+        )}
+      </View>
     </SafeAreaView>
   );
 }
