@@ -1,3 +1,4 @@
+import { StatusBar } from "react-native";
 import {
   ActivityIndicator,
   Modal,
@@ -26,6 +27,7 @@ import { useEffect, useState } from "react";
 import { Image } from "react-native";
 import { Audio } from "expo-av";
 import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
 
 export default function HomeScreen() {
   const [text, setText] = useState<string>("");
@@ -45,10 +47,14 @@ export default function HomeScreen() {
   >(null);
   const [showOutput, setShowOutput] = useState<boolean>(false);
   const [inputType, setInputType] = useState<string>("");
-  const [outputType, setOutputType] = useState<string>("Text");
+  const [outputType, setOutputType] = useState<string>("");
   const [textOutput, setTextOutput] = useState<string>("");
   const [brailleOutput, setBrailleOutput] = useState<string>("");
   const [signGif, setSignGif] = useState<string | null>(null);
+  const [audioOutput, setAudioOutput] = useState<string>("");
+  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [outputSoundName, setOutputSoundName] = useState<string>("");
 
   async function loadAudioFile(uri: string) {
     const { sound } = await Audio.Sound.createAsync(
@@ -137,6 +143,18 @@ export default function HomeScreen() {
         await sound.sound.playAsync();
         setPlayingSoundIndex(soundIndex);
       }
+    } catch (error) {
+      console.log("Error toggling playback:", error);
+    }
+  }
+
+  async function clearPlayback(soundIndex: number) {
+    const sound = loadedSounds[soundIndex];
+    if (!sound || !sound.sound) return;
+
+    try {
+      await sound.sound.unloadAsync();
+      setPlayingSoundIndex(null);
     } catch (error) {
       console.log("Error toggling playback:", error);
     }
@@ -284,6 +302,7 @@ export default function HomeScreen() {
     }
   };
 
+
   const textToSign = async (text: string) => {
     try {
       const encodedText = encodeURIComponent(text);
@@ -295,15 +314,89 @@ export default function HomeScreen() {
     }
   };
 
+  const textToSpeech = async (text: string) => {
+    try {
+      const response = await fetch(
+        "https://adapt-sense-backend.onrender.com/text_to_speech",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ text }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+
+      const contentDisposition = response.headers.get("content-disposition");
+
+      let fileName = "";
+      if (contentDisposition) {
+        const match = contentDisposition.split("=");
+        if (match && match[1]) {
+          fileName = match[1];
+        }
+      }
+      setOutputSoundName(fileName);
+
+      const audioBlob = await response.blob();
+
+      const reader = new FileReader();
+      reader.readAsDataURL(audioBlob);
+      reader.onloadend = async () => {
+        const base64Audio = reader.result.split(",")[1];
+        const filePath = `${FileSystem.documentDirectory}audio.mp3`;
+        await FileSystem.writeAsStringAsync(filePath, base64Audio, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        setAudioOutput(filePath);
+        console.log(audioOutput);
+      };
+    } catch (err) {
+      console.error("Error preparing text for speech:", err);
+    }
+  };
+
+  const handleAudio = async () => {
+    if (isPlaying && sound) {
+      await sound.pauseAsync();
+      setIsPlaying(false);
+    } else {
+      if (sound) {
+        await sound.playAsync();
+        setIsPlaying(true);
+      } else if (audioOutput) {
+        const { sound: newSound } = await Audio.Sound.createAsync({
+          uri: audioOutput,
+        });
+        setSound(newSound);
+        await newSound.playAsync();
+        setIsPlaying(true);
+      }
+    }
+  };
+
+  const clearAudio = async () => {
+    if (sound) {
+      await sound.unloadAsync();
+      setSound(null);
+      setIsPlaying(false);
+    }
+  };
   useEffect(() => {
     if (textOutput.length > 0) {
       textToBraille(textOutput);
       textToSign(textOutput);
+      textToSpeech(textOutput);
     }
   }, [textOutput]);
 
   return (
     <SafeAreaView className="flex-1">
+      <StatusBar backgroundColor="white" barStyle="dark-content" />
       <View className="flex-1 bg-[#FFF]">
         <View className="flex flex-col items-center">
           <Image
@@ -314,7 +407,9 @@ export default function HomeScreen() {
         <View className="flex flex-wrap justify-center gap-3 mt-6">
           <View className="flex-row justify-center gap-3">
             <View className="bg-white w-44 h-44 flex items-center justify-center rounded-2xl shadow-xl shadow-black android:elevation-10">
-              <TouchableOpacity className="w-32 h-32 bg-black border-4 border-white rounded-full flex items-center justify-center shadow-xl shadow-black android:elevation-20">
+              <TouchableOpacity
+                className="w-32 h-32 bg-black border-4 border-white rounded-full flex items-center justify-center shadow-xl shadow-black android:elevation-20"
+              >
                 <PhotoIcon size={40} color="white" />
               </TouchableOpacity>
             </View>
@@ -322,7 +417,6 @@ export default function HomeScreen() {
             <View className="bg-white w-44 h-44 flex items-center justify-center rounded-2xl shadow-xl shadow-black android:elevation-10">
               <TouchableOpacity
                 onPress={() => {
-                  setTextInput(false);
                   setUploadAudio(false);
                   setAudioInput(true);
                 }}
@@ -335,7 +429,9 @@ export default function HomeScreen() {
 
           <View className="flex-row justify-center gap-3">
             <View className="bg-white w-44 h-44 flex items-center justify-center rounded-2xl shadow-xl shadow-black android:elevation-10">
-              <TouchableOpacity className="w-32 h-32 bg-black border-4 border-white rounded-full flex items-center justify-center shadow-xl shadow-black android:elevation-20">
+              <TouchableOpacity
+                className="w-32 h-32 bg-black border-4 border-white rounded-full flex items-center justify-center shadow-xl shadow-black android:elevation-20"
+              >
                 <Squares2X2Icon size={40} color="white" />
               </TouchableOpacity>
             </View>
@@ -383,6 +479,7 @@ export default function HomeScreen() {
                     setInputType("Text");
                     setTextInput(false);
                     setShowOutput(true);
+                    setTextOutput(text);
                   }}
                   className={`w-24 h-10 border rounded-lg flex items-center justify-center mt-4 mb-4 p-2 ${
                     text === "" ? "bg-gray-400" : "bg-black"
@@ -550,6 +647,7 @@ export default function HomeScreen() {
                                 setAudioInput(false);
                                 setShowOutput(true);
                                 convertAudio(loadedSounds[index].uri);
+                                clearPlayback(index);
                               }}
                               className="w-24 bg-black flex-row items-center gap-1 p-2 rounded-lg"
                             >
@@ -568,6 +666,8 @@ export default function HomeScreen() {
             </View>
           </Modal>
         )}
+
+
         {showOutput && (
           <Modal transparent={true} animationType="fade">
             <View className="flex-1 bg-black/50 items-center justify-center">
@@ -579,6 +679,9 @@ export default function HomeScreen() {
                     setText("");
                     setTextOutput("");
                     setBrailleOutput("");
+                    setOutputType("");
+                    clearAudio();
+                    setAudioOutput("");
                   }}
                   className="absolute top-3 right-3"
                 >
@@ -587,61 +690,94 @@ export default function HomeScreen() {
                 <Text className="text-black text-2xl font-bold">
                   Select the output type
                 </Text>
-                <View className="flex-row items-center justify-center mt-3">
+                <View className="flex-row items-center justify-center gap-2 mt-3">
                   <TouchableOpacity
                     onPress={() => setOutputType("Text")}
                     className={`${
                       inputType === "Text"
                         ? "hidden"
-                        : "mr-2 border border-black p-1 rounded-lg"
+                        : `w-16 border border-black p-1 rounded-lg ${
+                            outputType === "Text" ? "bg-black" : ""
+                          }`
                     }`}
                   >
-                    <Text className="text-black text-lg font-bold">Text</Text>
+                    <Text
+                      className={`${
+                        outputType === "Text" ? "text-white" : "text-black"
+                      } text-lg font-bold text-center`}
+                    >
+                      Text
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => setOutputType("Audio")}
                     className={`${
                       inputType === "Audio"
                         ? "hidden"
-                        : "mr-2 border border-black p-1 rounded-lg"
+                        : `w-16 border border-black p-1 rounded-lg ${
+                            outputType === "Audio" ? "bg-black" : ""
+                          }`
                     }`}
                   >
-                    <Text className="text-black text-lg font-bold">Audio</Text>
+                    <Text
+                      className={`${
+                        outputType === "Audio" ? "text-white" : "text-black"
+                      } text-lg font-bold text-center`}
+                    >
+                      Audio
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => setOutputType("Sign")}
                     className={`${
                       inputType === "Sign"
                         ? "hidden"
-                        : "mr-2 border border-black p-1 rounded-lg"
+                        : `w-16 border border-black p-1 rounded-lg ${
+                            outputType === "Sign" ? "bg-black" : ""
+                          }`
                     }`}
                   >
-                    <Text className="text-black text-lg font-bold">Sign</Text>
+                    <Text
+                      className={`${
+                        outputType === "Sign" ? "text-white" : "text-black"
+                      } text-lg font-bold text-center`}
+                    >
+                      Sign
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => setOutputType("Braille")}
                     className={`${
                       inputType === "Braille"
                         ? "hidden"
-                        : "mr-2 border border-black p-1 rounded-lg"
+                        : `w-16 border border-black p-1 rounded-lg ${
+                            outputType === "Braille" ? "bg-black" : ""
+                          }`
                     }`}
                   >
-                    <Text className="text-black text-lg font-bold">
+                    <Text
+                      className={`${
+                        outputType === "Braille" ? "text-white" : "text-black"
+                      } text-lg font-bold text-center`}
+                    >
                       Braille
                     </Text>
                   </TouchableOpacity>
                 </View>
-                <Text className="text-black text-xl font-bold mt-10">
-                  {outputType} Output
-                </Text>
+                {outputType !== "" && (
+                  <Text className="text-black text-xl font-bold mt-10">
+                    {outputType} Output
+                  </Text>
+                )}
+
                 {outputType === "Text" && (
-                  <ScrollView className="border-2 rounded-xl w-full p-4 mt-2">
+                  <ScrollView className="border-2 rounded-xl w-full mt-2">
                     {textOutput.length > 0 ? (
-                      <Text className="text-black text-lg text-center">
+                      <Text className="text-black text-lg text-center p-2">
                         {textOutput}
                       </Text>
                     ) : (
-                      <View className="flex justify-center items-center space-x-2">
+                      <View className="flex justify-center items-center space-x-2 mt-4">
                         <ActivityIndicator size="large" color="black" />
                       </View>
                     )}
@@ -674,6 +810,29 @@ export default function HomeScreen() {
                       </View>
                     )}
                   </ScrollView>
+                )}
+                {outputType === "Audio" && (
+                  <View className="w-full p-4 mt-2">
+                    {audioOutput ? (
+                      <View className="flex-row justify-center items-center border-2 rounded-xl p-2">
+                        <Text>{outputSoundName}</Text>
+                        <TouchableOpacity
+                          onPress={handleAudio}
+                          className="p-2 rounded-lg flex justify-center items-center"
+                        >
+                          {isPlaying ? (
+                            <PauseCircleIcon size={30} color="red" />
+                          ) : (
+                            <PlayCircleIcon size={30} color="red" />
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <View className="flex justify-center items-center space-x-2">
+                        <ActivityIndicator size="large" color="black" />
+                      </View>
+                    )}
+                  </View>
                 )}
               </View>
             </View>
