@@ -22,17 +22,23 @@ import {
   PauseCircleIcon,
   ArrowUpIcon,
   TrashIcon,
+  CameraIcon,
 } from "react-native-heroicons/outline";
 import { useEffect, useState } from "react";
 import { Image } from "react-native";
 import { Audio } from "expo-av";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
+import * as ImagePicker from "expo-image-picker";
+import { BASE_URL } from "@env"
 
 export default function HomeScreen() {
   const [text, setText] = useState<string>("");
   const [textInput, setTextInput] = useState<boolean>(false);
   const [audioInput, setAudioInput] = useState<boolean>(false);
+  const [brailleInput, setBrailleInput] = useState<boolean>(false);
+  const [imageInput, setImageInput] = useState<boolean>(false);
+  const [imageDisplay, setImageDisplay] = useState<boolean>(false);
   const [recordAudio, setRecordAudio] = useState<boolean>(false);
   const [uploadAudio, setUploadAudio] = useState<boolean>(false);
   const [recording, setRecording] = useState<any>();
@@ -52,6 +58,7 @@ export default function HomeScreen() {
   const [brailleOutput, setBrailleOutput] = useState<string>("");
   const [signGif, setSignGif] = useState<string | null>(null);
   const [audioOutput, setAudioOutput] = useState<string>("");
+  const [imageLink, setImageLink] = useState<string>("");
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [outputSoundName, setOutputSoundName] = useState<string>("");
@@ -255,7 +262,7 @@ export default function HomeScreen() {
 
       console.log("FormData prepared:", formData);
       const response = await fetch(
-        "https://adapt-sense-backend.onrender.com/speech_to_text/",
+        `${BASE_URL}/speech_to_text/`,
         {
           method: "POST",
           body: formData,
@@ -279,7 +286,7 @@ export default function HomeScreen() {
   const textToBraille = async (text: string) => {
     try {
       const response = await fetch(
-        "https://adapt-sense-backend.onrender.com/to_braille",
+        `${BASE_URL}/to_braille`,
         {
           method: "POST",
           headers: {
@@ -302,11 +309,36 @@ export default function HomeScreen() {
     }
   };
 
+  const brailleToText = async (text: string) => {
+    try {
+      const response = await fetch(
+        `${BASE_URL}/to_english`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text: text,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setTextOutput(data.english);
+    } catch (err) {
+      console.error("Error preparing text for Braille:", err);
+    }
+  };
 
   const textToSign = async (text: string) => {
     try {
       const encodedText = encodeURIComponent(text);
-      const url = `https://adapt-sense-backend.onrender.com/stream_sign_images?text=${encodedText}`;
+      const url = `${BASE_URL}/stream_sign_images?text=${encodedText}`;
       setSignGif(url);
     } catch (err) {
       console.error("Error converting text to sign:", err);
@@ -317,7 +349,7 @@ export default function HomeScreen() {
   const textToSpeech = async (text: string) => {
     try {
       const response = await fetch(
-        "https://adapt-sense-backend.onrender.com/text_to_speech",
+        `${BASE_URL}/text_to_speech`,
         {
           method: "POST",
           headers: {
@@ -386,6 +418,70 @@ export default function HomeScreen() {
       setIsPlaying(false);
     }
   };
+
+  const handleOpenCamera = async () => {
+    let result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 1,
+    });
+    if (!result.canceled) {
+      setImageLink(result.assets[0].uri);
+    }
+    setImageDisplay(true);
+  };
+
+  const handleUploadFromGallery = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 1,
+    });
+    if (!result.canceled) {
+      setImageLink(result.assets[0].uri);
+    }
+    setImageDisplay(true);
+  };
+
+  const imageToText = async () => {
+    try {
+      const getMimeType = (uri: string) => {
+        const extension = uri.split(".").pop().toLowerCase();
+        if (extension === "png") return "image/png";
+        if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+        return "application/octet-stream";
+      };
+
+      const formData = new FormData();
+      formData.append("file", {
+        uri: imageLink,
+        name: `image.${imageLink.split(".").pop()}`,
+        type: getMimeType(imageLink),
+      });
+
+      const response = await fetch(
+        `${BASE_URL}/image_to_text/`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "multipart/form-data",
+            Accept: "application/json",
+          },
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setTextOutput(data.extracted_text);
+    } catch (err) {
+      console.error("Error preparing text for Image:", err);
+    }
+  };
+
   useEffect(() => {
     if (textOutput.length > 0) {
       textToBraille(textOutput);
@@ -398,7 +494,7 @@ export default function HomeScreen() {
     <SafeAreaView className="flex-1">
       <StatusBar backgroundColor="white" barStyle="dark-content" />
       <View className="flex-1 bg-[#FFF]">
-        <View className="flex flex-col items-center">
+        <View className="flex flex-col items-center mt-4">
           <Image
             source={require("../../assets/images/logo.png")}
             className="w-40 h-40"
@@ -408,6 +504,7 @@ export default function HomeScreen() {
           <View className="flex-row justify-center gap-3">
             <View className="bg-white w-44 h-44 flex items-center justify-center rounded-2xl shadow-xl shadow-black android:elevation-10">
               <TouchableOpacity
+                onPress={() => setImageInput(true)}
                 className="w-32 h-32 bg-black border-4 border-white rounded-full flex items-center justify-center shadow-xl shadow-black android:elevation-20"
               >
                 <PhotoIcon size={40} color="white" />
@@ -430,6 +527,7 @@ export default function HomeScreen() {
           <View className="flex-row justify-center gap-3">
             <View className="bg-white w-44 h-44 flex items-center justify-center rounded-2xl shadow-xl shadow-black android:elevation-10">
               <TouchableOpacity
+                onPress={() => setBrailleInput(true)}
                 className="w-32 h-32 bg-black border-4 border-white rounded-full flex items-center justify-center shadow-xl shadow-black android:elevation-20"
               >
                 <Squares2X2Icon size={40} color="white" />
@@ -480,6 +578,54 @@ export default function HomeScreen() {
                     setTextInput(false);
                     setShowOutput(true);
                     setTextOutput(text);
+                  }}
+                  className={`w-24 h-10 border rounded-lg flex items-center justify-center mt-4 mb-4 p-2 ${
+                    text === "" ? "bg-gray-400" : "bg-black"
+                  }`}
+                >
+                  <View className="flex-row items-center gap-1 p-2">
+                    <ArrowUpIcon size={20} color="white" />
+                    <Text className="text-white font-bold">Submit</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        {brailleInput && (
+          <Modal
+            transparent={true}
+            onRequestClose={() => setBrailleInput(false)}
+            animationType="fade"
+          >
+            <View className="flex-1 bg-black/50 items-center justify-center">
+              <View className="w-4/5 h-96 bg-white p-10 rounded-2xl flex-col items-center shadow-xl shadow-black android:elevation-20 border-2 border-dotted">
+                <TouchableOpacity
+                  onPress={() => setBrailleInput(false)}
+                  className="absolute top-3 right-3"
+                >
+                  <XMarkIcon size={30} color="black" />
+                </TouchableOpacity>
+                <Text className="text-black text-xl font-bold">
+                  Enter braille text
+                </Text>
+                <TextInput
+                  className="w-full h-48 bg-gray-500 text-white text-lg border-2 border-black rounded-xl mt-4 p-2"
+                  placeholder="Type your text here"
+                  placeholderTextColor="lightgray"
+                  multiline
+                  value={text}
+                  onChangeText={(text) => setText(text)}
+                  style={{ textAlignVertical: "top" }}
+                />
+                <TouchableOpacity
+                  disabled={text === ""}
+                  onPress={() => {
+                    setInputType("Braille");
+                    setBrailleInput(false);
+                    setShowOutput(true);
+                    brailleToText(text);
                   }}
                   className={`w-24 h-10 border rounded-lg flex items-center justify-center mt-4 mb-4 p-2 ${
                     text === "" ? "bg-gray-400" : "bg-black"
@@ -607,13 +753,12 @@ export default function HomeScreen() {
                   !recordAudio && (
                     <View>
                       {loadedSounds.map((sound: any, index: number) => (
-                        <View>
+                        <View key={index}>
                           <View
-                            key={index}
-                            className=" flex-row h-28 items-center justify-between border border-black p-2 rounded-xl mt-4"
+                            className=" flex-row w-full h-28 items-center justify-between border border-black p-2 rounded-xl mt-4"
                           >
                             <ScrollView>
-                              <Text className="w-2/3 text-red-500 text-lg font-bold">
+                              <Text className="w-4/5 text-red-500 text-lg font-bold">
                                 {audioName}
                               </Text>
                             </ScrollView>
@@ -667,6 +812,102 @@ export default function HomeScreen() {
           </Modal>
         )}
 
+        {imageInput && (
+          <Modal
+            transparent={true}
+            onRequestClose={() => {
+              setImageDisplay(false);
+              setImageInput(false);
+            }}
+            animationType="fade"
+          >
+            <View className="flex-1 bg-black/50 items-center justify-center">
+              <View className="w-4/5 h-2/5 bg-white p-10 rounded-2xl flex-col items-center justify-center shadow-xl shadow-black android:elevation-20 border-2 border-dotted">
+                <TouchableOpacity
+                  onPress={() => {
+                    setImageDisplay(false);
+                    setImageInput(false);
+                  }}
+                  className="absolute top-3 right-3"
+                >
+                  <XMarkIcon size={30} color="black" />
+                </TouchableOpacity>
+                {imageDisplay && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setImageDisplay(false);
+                    }}
+                    className="absolute top-4 left-4"
+                  >
+                    <ArrowLeftIcon size={20} color="black" />
+                  </TouchableOpacity>
+                )}
+                {!imageDisplay ? (
+                  <View className="items-center">
+                    <TouchableOpacity
+                      onPress={handleOpenCamera}
+                      className="w-40 h-16 bg-black border rounded-lg flex-row items-center justify-center mt-6 mb-4 p-2"
+                    >
+                      <CameraIcon size={20} color="white" />
+                      <Text className="text-white font-bold ml-2">
+                        Open Camera
+                      </Text>
+                    </TouchableOpacity>
+                    <Text className="text-black text-xl font-bold">or</Text>
+                    <TouchableOpacity
+                      onPress={handleUploadFromGallery}
+                      className="w-40 h-16 bg-black border rounded-lg flex-row items-center justify-center mt-6 mb-4 p-2"
+                    >
+                      <PhotoIcon size={20} color="white" />
+                      <Text className="text-white font-bold ml-2">
+                        Upload Image
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View>
+                    <Image
+                      resizeMode="contain"
+                      source={{
+                        uri: imageLink,
+                      }}
+                      className="w-44 h-44 border-2 rounded-xl"
+                    />
+                    <View className="flex-col items-center gap-4 mt-6">
+                      <TouchableOpacity
+                        onPress={() => {
+                          setImageLink("");
+                          setImageDisplay(false);
+                        }}
+                        className="w-24 bg-black flex-row items-center gap-1 p-2 rounded-lg"
+                      >
+                        <TrashIcon size={20} color="white" />
+                        <Text className="text-white text-base font-bold">
+                          Delete
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setInputType("Image");
+                          setImageDisplay(false);
+                          setImageInput(false);
+                          setShowOutput(true);
+                          imageToText();
+                        }}
+                        className="w-24 bg-black flex-row items-center gap-1 p-2 rounded-lg"
+                      >
+                        <ArrowUpIcon size={20} color="white" />
+                        <Text className="text-white text-base font-bold">
+                          Submit
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </View>
+            </View>
+          </Modal>
+        )}
 
         {showOutput && (
           <Modal transparent={true} animationType="fade">
